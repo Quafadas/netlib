@@ -185,4 +185,39 @@ public class DgemmTest extends BLASTest {
         blas.dgemm("T", "T", M, N/2, K, 0.0, dgeAT, K, dgeBT, N/2, 1.0, dgeCcopy = dgeC.clone(), M);
         assertArrayEquals(expected, dgeCcopy, depsilon);
     }
+
+    @ParameterizedTest
+    @MethodSource("BLASImplementations")
+    void testOffsetBoundsCheck(BLAS blas) {
+        // Test case from GitHub issue #23 - DGEMM with offset incorrectly reports index out of bounds
+        // Matrix A: 2 rows, 3 cols, stored starting at offset 1 in a length-9 array
+        double[] a = {1.0, 4.0, 7.0, 2.0, 5.0, 8.0, 3.0, 6.0, 9.0};
+        int m = 2; // rows of op(A) and C
+        int k = 3; // cols of op(A) and rows of op(B)
+        int n = 1; // cols of op(B) and C
+        int lda = 3; // leading dimension of A
+        int offsetA = 1;
+
+        // Matrix B: 3 rows, 1 col
+        double[] b = {1.0, 2.0, 3.0};
+        int ldb = 3;
+        int offsetB = 0;
+
+        // Output matrix C: 2 rows, 1 col
+        double[] c = new double[2];
+        int ldc = 2;
+        int offsetC = 0;
+
+        // This should NOT throw IndexOutOfBoundsException
+        // The maximum index accessed in matrix A should be: offsetA + (k-1)*lda + (m-1) = 1 + 2*3 + 1 = 8
+        // which is valid for an array of length 9 (indices 0-8)
+        assertDoesNotThrow(() -> {
+            blas.dgemm("N", "N", m, n, k, 1.0, a, offsetA, lda, b, offsetB, ldb, 0.0, c, offsetC, ldc);
+        });
+
+        // Verify the computation is correct by comparing with F2J implementation
+        double[] expected = new double[2];
+        f2j.dgemm("N", "N", m, n, k, 1.0, a, offsetA, lda, b, offsetB, ldb, 0.0, expected, offsetC, ldc);
+        assertArrayEquals(expected, c, depsilon);
+    }
 }
